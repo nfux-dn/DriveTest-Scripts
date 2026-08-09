@@ -183,7 +183,9 @@ Rules:
 - Tests reach devices only through the DriveTest Network API — the `drivetest` ExecutionContext
   SDK, which the platform makes importable for you.
 - Your test never sees device hostnames or credentials. You address devices by **role**
-  (e.g. `dut`, `mse`). Roles come from the Environment definition (managed in the platform).
+  (e.g. `dut`, `mse`). Roles come from the **prerequisites**: a prerequisite field marked with
+  `device_role` opens one session to the host the user enters. More `device_role` fields = more
+  sessions (see [Prerequisites](#prerequisites)).
 
 Usage:
 
@@ -191,12 +193,24 @@ Usage:
 from drivetest import ExecutionContext
 
 ctx = ExecutionContext.from_env()
+dut = ctx.device("dut")
 
-# Run a command on a device by role and get its output:
-output = ctx.device("dut").run("show version")
+# Read state:
+output = dut.run("show interfaces description")
 
-# Apply configuration (a list of commands):
-ctx.device("dut").configure(["configure terminal", "interface ...", "end"])
+# Stage a config transaction, then commit (DNOS-style):
+dut.configure([
+    "interfaces",
+    "  ge100-0/0/0",
+    '    description "uplink"',
+    "  !",
+    "!",
+])
+dut.commit()
+
+# Roll back to the previous committed config and apply it:
+dut.rollback(1)
+dut.commit()
 
 # Handy accessors:
 ctx.test_id          # current test id
@@ -204,6 +218,11 @@ ctx.values           # prerequisite values the user supplied (no raw secrets)
 ctx.environment      # {"platform": ..., "system_type": ..., "software_version": ...}
 ctx.write_result({...})  # convenience: writes result.json for you
 ```
+
+`configure(commands, commit=False)` enters config mode and stages a candidate (it does not
+commit unless `commit=True`); `commit()` applies it; `rollback(n)` loads a previous committed
+config (pair with `commit()`). For DNOS command shapes, see the authoring skill's
+`dnos-patterns.md`.
 
 Dropped connections are re-established automatically by the platform under a bounded reconnect
 policy. If a device is unreachable, a device call raises `drivetest.DriveTestApiError`; treat
@@ -372,6 +391,19 @@ sections:
 
 **Supported field types:** `text`, `textarea`, `number`, `integer`, `boolean`,
 `confirmation`, `select`, `multiselect`, `ip`, `interface`, `secret_reference`, `check`.
+
+**Device binding:** add `device_role` to a field that holds a device address to open a
+Run-owned session to the host the user enters, addressable in tests via `ctx.device("<role>")`.
+The number of filled, visible `device_role` fields determines how many sessions open. Optionally
+add `credential_ref` naming a `secret_reference` field that holds the device credential.
+
+```yaml
+- id: dut_management_ip
+  label: DUT Management IP
+  type: ip
+  required: true
+  device_role: dut
+```
 
 **Automatic check handlers** (referenced by `check.handler`) are implemented on the platform,
 not here — YAML can never run arbitrary commands. Available handlers:

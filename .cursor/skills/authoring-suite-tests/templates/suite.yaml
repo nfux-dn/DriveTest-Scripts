@@ -1,0 +1,14 @@
+id: my_suite
+name: My Suite
+description: What this suite validates.
+
+requirements:
+  min_devices: 1
+  traffic_generator: false
+  capabilities: []
+
+supported_platforms:
+  - platform_a
+
+tests:
+  - my_test

@@ -1,0 +1,5 @@
+id: my_test
+name: My Test
+description: What this test does.
+expected_behavior: What a healthy device should show.
+evaluation_instructions: How the AI reviewer should decide pass vs fail.

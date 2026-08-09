@@ -1,0 +1,16 @@
+id: interfaces_common
+version: 1
+
+sections:
+
+  - id: connectivity
+    title: Connectivity
+    fields:
+
+      - id: dut_management_ip
+        label: DUT Management IP
+        type: ip
+        required: true
+        description: Management IP of the device under test.
+        # Opens the Run-owned session to this host as role "dut" (spec section 51).
+        device_role: dut

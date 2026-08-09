@@ -1,0 +1,12 @@
+id: interface-description-change
+name: Interface description change and rollback
+description: >-
+  Sets a unique description on every 'ge' interface, commits, verifies each was
+  applied, then rolls back one transaction, commits, and verifies the original
+  state was restored.
+expected_behavior: >-
+  After commit, each ge interface shows exactly its configured description; after
+  rollback 1 + commit, every ge interface returns to its baseline description.
+evaluation_instructions: >-
+  Pass only if every ge interface matched its configured description after commit
+  AND all reverted to the baseline after rollback. Any mismatch is a failure.
