@@ -19,6 +19,7 @@ correctly when the platform executes them.
 - [A Suite: `suite.yaml`](#a-suite-suiteyaml)
 - [A Test: `test.py` + `test.yaml`](#a-test-testpy--testyaml)
 - [The execution contract](#the-execution-contract)
+- [Talking to devices (ExecutionContext)](#talking-to-devices-executioncontext)
 - [The result contract (`result.json`)](#the-result-contract-resultjson)
 - [Verdict model: who decides pass/fail](#verdict-model-who-decides-passfail)
 - [Execution status and errors](#execution-status-and-errors)
@@ -33,15 +34,19 @@ correctly when the platform executes them.
 1. The user selects a Suite and a compatible Environment and fills the prerequisite form.
 2. The user selects a branch/commit **of this repository**.
 3. The platform clones this repo at that exact commit into a temporary, isolated workspace.
-4. For each test id listed in the Suite, in order, the platform:
+4. The platform establishes a **persistent connection to every required device** (owned by
+   the Run) and starts a connection broker your tests talk to via the ExecutionContext SDK.
+5. For each test id listed in the Suite, in order, the platform:
    - launches `python3 test.py` **as a separate process** (never inside the platform),
    - passes context (environment + prerequisite values) via a JSON file,
    - waits with a timeout, captures stdout/stderr,
    - reads the `result.json` your test wrote,
    - classifies the execution (completed vs. error), then runs an AI review,
    - stores everything and computes the final verdict.
+6. At the end of the Run, all device connections are closed.
 
-Tests run sequentially and are evaluated independently.
+Tests run sequentially and are evaluated independently. Device access is shared and owned by
+the Run — see [Talking to devices](#talking-to-devices-executioncontext).
 
 ## Repository structure
 
@@ -124,8 +129,9 @@ evaluation_instructions: Treat measured rate exceeding configured by more than 5
 When the platform runs `test.py`:
 
 - **Working directory** is the test's own folder (`suites/<suite_id>/tests/<test_id>/`).
-- **Runtime** is Python 3.12. The environment is minimal — assume only the Python **standard
-  library** is available (see [best practices](#rules-and-best-practices) about dependencies).
+- **Runtime** is Python 3.12. Assume only the Python **standard library** plus the platform's
+  `drivetest` SDK (also stdlib-only) are available — see
+  [best practices](#rules-and-best-practices) about dependencies.
 - The following **environment variables** are provided (and little else):
 
   | Variable                 | Meaning                                                        |
@@ -133,6 +139,10 @@ When the platform runs `test.py`:
   | `DRIVETEST_RESULT_PATH`  | Absolute path where your test MUST write `result.json`.        |
   | `DRIVETEST_CONTEXT_PATH` | Absolute path to a JSON file with the run context (read-only). |
   | `DRIVETEST_TEST_ID`      | The test id the platform is running.                           |
+
+  The platform also sets device-access variables (`DRIVETEST_BROKER_URL`,
+  `DRIVETEST_BROKER_TOKEN`) and puts the `drivetest` SDK on `PYTHONPATH`. You should not use
+  those directly — use the ExecutionContext SDK below.
 
 - The **context file** (`DRIVETEST_CONTEXT_PATH`) contains:
 
@@ -155,11 +165,50 @@ When the platform runs `test.py`:
   }
   ```
 
-  `values` are the prerequisite inputs the user filled in for this run. Use them to know how
-  to reach the device under test, which ports/generators to use, etc.
+  `values` are the prerequisite inputs the user filled in for this run (e.g. which port or
+  traffic generator to use). Do NOT use them to open your own connection to a device — device
+  access goes through the ExecutionContext (below).
 
 - There is a **timeout** (default 300s). Exceeding it is recorded as `TIMEOUT`.
 - stdout/stderr are captured (bounded in size) and stored as artifacts.
+
+## Talking to devices (ExecutionContext)
+
+**SSH connections are owned by the Run, not by your test.** At the start of a Run the platform
+opens one persistent session per required device and shares it with every test in the Suite.
+
+Rules:
+
+- Tests MUST NOT open their own SSH/socket/network connections to devices.
+- Tests reach devices only through the DriveTest Network API — the `drivetest` ExecutionContext
+  SDK, which the platform makes importable for you.
+- Your test never sees device hostnames or credentials. You address devices by **role**
+  (e.g. `dut`, `mse`). Roles come from the Environment definition (managed in the platform).
+
+Usage:
+
+```python
+from drivetest import ExecutionContext
+
+ctx = ExecutionContext.from_env()
+
+# Run a command on a device by role and get its output:
+output = ctx.device("dut").run("show version")
+
+# Apply configuration (a list of commands):
+ctx.device("dut").configure(["configure terminal", "interface ...", "end"])
+
+# Handy accessors:
+ctx.test_id          # current test id
+ctx.values           # prerequisite values the user supplied (no raw secrets)
+ctx.environment      # {"platform": ..., "system_type": ..., "software_version": ...}
+ctx.write_result({...})  # convenience: writes result.json for you
+```
+
+Dropped connections are re-established automatically by the platform under a bounded reconnect
+policy. If a device is unreachable, a device call raises `drivetest.DriveTestApiError`; treat
+that as an infrastructure problem (write `execution_status: "INFRA_ERROR"`), not a product
+failure.
 
 ## The result contract (`result.json`)
 
@@ -338,12 +387,12 @@ The values the user fills in are delivered to your `test.py` in the context file
 
    ```
    suites/demo/suite.yaml
-   suites/demo/tests/ping_check/test.py
-   suites/demo/tests/ping_check/test.yaml
+   suites/demo/tests/show_version/test.py
+   suites/demo/tests/show_version/test.yaml
    prerequisites/demo/common.yaml
    ```
 
-2. `suites/demo/suite.yaml`:
+2. `suites/demo/suite.yaml` (the Environment it runs on must provide a `dut` device):
 
    ```yaml
    id: demo
@@ -355,52 +404,41 @@ The values the user fills in are delivered to your `test.py` in the context file
      capabilities: []
    supported_platforms: [platform_a]
    tests:
-     - ping_check
+     - show_version
    ```
 
-3. `suites/demo/tests/ping_check/test.py`:
+3. `suites/demo/tests/show_version/test.py` — talk to the device via ExecutionContext
+   (never open your own SSH):
 
    ```python
-   import json
-   import os
-   import subprocess
+   from drivetest import ExecutionContext
 
-   # 1) Read context (environment + prerequisite values).
-   with open(os.environ["DRIVETEST_CONTEXT_PATH"], encoding="utf-8") as fh:
-       context = json.load(fh)
-   values = context.get("values", {})
-   target_ip = values.get("dut_management_ip", "127.0.0.1")
+   ctx = ExecutionContext.from_env()
 
-   # 2) Do the work. Uncaught exceptions -> SCRIPT_ERROR (that's fine for bugs).
-   proc = subprocess.run(
-       ["ping", "-c", "3", "-W", "2", target_ip],
-       capture_output=True, text=True, timeout=30,
-   )
-   reachable = proc.returncode == 0
-   print(proc.stdout)  # captured as an artifact
+   # Use the Run-owned session to the device with role "dut".
+   output = ctx.device("dut").run("show version")
+   print(output)
 
-   # 3) Decide a verdict (Mode A) and write result.json.
-   result = {
+   passed = bool(output.strip())
+   ctx.write_result({
        "execution_status": "COMPLETED",
-       "test_id": os.environ["DRIVETEST_TEST_ID"],
-       "test_verdict": "PASSED" if reachable else "FAILED",
-       "measurements": {"reachable": reachable},
-       "observations": [f"Pinged {target_ip}."],
-       "evidence": [proc.stdout.strip().splitlines()[-1] if proc.stdout else "no output"],
+       "test_id": ctx.test_id or "show_version",
+       "test_verdict": "PASSED" if passed else "FAILED",
+       "measurements": {"command": "show version"},
+       "observations": ["Collected device version via the DriveTest Network API."],
+       "evidence": [output.strip().splitlines()[-1] if output.strip() else "no output"],
        "artifacts": [],
-   }
-   with open(os.environ["DRIVETEST_RESULT_PATH"], "w", encoding="utf-8") as fh:
-       json.dump(result, fh)
+   })
    ```
 
-4. `suites/demo/tests/ping_check/test.yaml`:
+4. `suites/demo/tests/show_version/test.yaml`:
 
    ```yaml
-   id: ping_check
-   name: Ping reachability
-   description: Confirm the DUT management IP responds to ICMP.
-   expected_behavior: The DUT should reply to pings.
-   evaluation_instructions: Treat any packet loss as a warning; total unreachability as failure.
+   id: show_version
+   name: Device version
+   description: Collect the device version over the Run-owned connection.
+   expected_behavior: The device returns version output.
+   evaluation_instructions: Pass if version output was returned; fail if empty.
    ```
 
 5. `prerequisites/demo/common.yaml`:
@@ -423,21 +461,28 @@ Demo Suite.
 
 ## Test it locally
 
-You can run a test exactly the way the platform does, without the platform:
+Device calls (`ctx.device(...).run(...)`) go through the Run-owned connection broker, so they
+only work while the platform is running your test. Two practical options:
+
+- **Run under the platform** (recommended): push your changes and start a Run — this exercises
+  the real connection lifecycle end to end.
+- **Locally test the non-device logic**: you can still run `test.py` to check your result
+  shaping/parsing. Provide the context and result paths below; any device call will raise
+  `drivetest.DriveTestApiError` unless a broker is reachable, so guard/skip device calls while
+  experimenting.
 
 ```bash
-cd suites/demo/tests/ping_check
+cd suites/demo/tests/show_version
 
-# Provide the context the platform would normally build:
 cat > /tmp/context.json <<'JSON'
-{ "run_id": "local", "suite_id": "demo", "test_id": "ping_check",
+{ "run_id": "local", "suite_id": "demo", "test_id": "show_version",
   "environment": {"id": "lab_23", "platform": "platform_a", "system_type": "pwhe", "software_version": "25.2"},
   "values": { "dut_management_ip": "127.0.0.1" } }
 JSON
 
 DRIVETEST_CONTEXT_PATH=/tmp/context.json \
 DRIVETEST_RESULT_PATH=/tmp/result.json \
-DRIVETEST_TEST_ID=ping_check \
+DRIVETEST_TEST_ID=show_version \
 python3 test.py
 
 cat /tmp/result.json   # inspect what the platform would ingest
@@ -448,12 +493,15 @@ would classify that run as `SCRIPT_ERROR`.
 
 ## Rules and best practices
 
+- **Never open your own device connections.** Do not SSH, telnet, or open sockets to devices
+  from a test. Device access is owned by the Run — use the ExecutionContext SDK
+  (`ctx.device(role).run(...)`). This is a hard rule (spec section 51).
 - **Self-contained.** Each test folder should stand on its own. Read only from the context;
   write only `result.json` (and any artifact files) into the working directory.
-- **Standard library only (MVP).** The platform does not install per-test dependencies. If you
-  need shared helpers, vendor plain-Python modules under `framework/` and import them with a
-  path relative to the repo, or copy them into the test folder. Do not rely on the platform's
-  own packages.
+- **Standard library + the `drivetest` SDK only (MVP).** The platform does not install per-test
+  dependencies. If you need shared helpers, vendor plain-Python modules under `framework/` and
+  import them with a path relative to the repo, or copy them into the test folder. Do not rely
+  on the platform's other packages.
 - **No secrets in this repo.** Never commit passwords, tokens, or private keys. Sensitive
   runtime values come through prerequisite fields (`secret_reference` / `sensitive: true`) and
   are handled by the platform — do not print them or write them into `result.json`.
@@ -472,6 +520,7 @@ would classify that run as `SCRIPT_ERROR`.
 - [ ] Folder `suites/<suite_id>/tests/<test_id>/` with `test.py`.
 - [ ] `<test_id>` added to the `tests:` list in `suites/<suite_id>/suite.yaml`.
 - [ ] `test.py` reads `DRIVETEST_CONTEXT_PATH` and writes valid JSON to `DRIVETEST_RESULT_PATH`.
+- [ ] Device access uses `ExecutionContext` by role — no direct SSH/sockets in the test.
 - [ ] `test_verdict` is `"PASSED"`, `"FAILED"`, or `null` (deliberately chosen).
 - [ ] `measurements`/`observations`/`evidence` populated for the AI reviewer.
 - [ ] `test.yaml` describes the test and gives evaluation instructions (recommended).
