@@ -2,13 +2,5 @@ id: interfaces
 name: Interfaces
 description: Interface configuration validation tests.
 
-requirements:
-  min_devices: 1
-  traffic_generator: false
-  capabilities: []
-
-supported_platforms:
-  - platform_a
-
 tests:
   - interface-description-change

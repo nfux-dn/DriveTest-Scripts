@@ -18,14 +18,20 @@ quick authoring guide.
 For a suite `S` and test `T`, create:
 
 ```
-suites/S/suite.yaml                         # suite definition + ordered test list
+suites/S/suite.yaml                         # id, name, description, ordered tests list
+suites/S/README.md                          # suite purpose + connectivity scheme
 suites/S/tests/T/test.py                    # the test (required)
 suites/S/tests/T/test.yaml                  # AI review metadata (recommended)
-prerequisites/S/common.yaml                 # inputs the user fills at run time
+prerequisites/S/common.yaml                 # device inputs the user fills at run time
 ```
 
 Copy the skeletons in `templates/` and adapt. Keep `T` in `suite.yaml`'s `tests:`
-list identical to the folder name.
+list identical to the folder name. There is no environment object and no
+platform/system layering: the user runs a suite and simply enters device
+addresses in the Environment tab.
+
+The Environment tab shows two things: your suite `README.md` (a `## Suite details`
+section and a `## Connectivity` section) and the dynamic prerequisite form.
 
 ## Device sessions come from prerequisites
 
@@ -95,17 +101,18 @@ Task Progress:
 ## Authoring workflow
 
 1. Pick suite id `S` and test id `T`.
-2. `suites/S/suite.yaml`: set `requirements`, `supported_platforms`, and add `T`
-   to `tests:`.
-3. `prerequisites/S/common.yaml`: add inputs; mark device hosts with `device_role`.
-4. `suites/S/tests/T/test.py`: use ExecutionContext; write result.json.
-5. `suites/S/tests/T/test.yaml`: name/description/expected_behavior/evaluation_instructions.
-6. Validate locally where possible (see repo README "Test it locally"), then run
+2. `suites/S/suite.yaml`: set `id`, `name`, `description`, and add `T` to `tests:`.
+3. `suites/S/README.md`: write `## Suite details` and `## Connectivity` sections.
+4. `prerequisites/S/common.yaml`: add inputs; mark device hosts with `device_role`.
+5. `suites/S/tests/T/test.py`: use ExecutionContext; write result.json.
+6. `suites/S/tests/T/test.yaml`: name/description/expected_behavior/evaluation_instructions.
+7. Validate locally where possible (see repo README "Test it locally"), then run
    it via the platform.
 
 ## Checklist
 
 - [ ] `T` folder has `test.py`; `T` is listed in `suites/S/suite.yaml`.
+- [ ] `suites/S/README.md` has `## Suite details` and `## Connectivity`.
 - [ ] Device access uses `ctx.device(role)` (role declared via `device_role`) - no direct SSH.
 - [ ] `test.py` writes valid `result.json` with a deliberate `test_verdict`.
 - [ ] `measurements`/`observations`/`evidence` populated for the AI reviewer.

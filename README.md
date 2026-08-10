@@ -57,8 +57,8 @@ The platform expects this layout. The important path is
 DriveTest-Scripts/
 ├── suites/
 │   └── <suite_id>/
-│       ├── suite.yaml                 # suite definition (requirements + ordered test list)
-│       ├── README.md                  # optional: what the suite validates
+│       ├── suite.yaml                 # id, name, description, ordered test list
+│       ├── README.md                  # suite purpose + connectivity (shown in Environment tab)
 │       └── tests/
 │           └── <test_id>/
 │               ├── test.py            # REQUIRED: the executable test
@@ -67,39 +67,25 @@ DriveTest-Scripts/
 │
 ├── prerequisites/
 │   └── <suite_id>/
-│       ├── common.yaml                # base prerequisite form
-│       ├── <platform>/default.yaml    # optional platform overrides
-│       └── <platform>/<system>.yaml   # optional platform+system overrides
+│       └── common.yaml                # the prerequisite form (device inputs)
 │
 ├── framework/                         # optional shared helpers you vendor in (see notes)
 └── schemas/                           # optional JSON schemas / reference docs
 ```
 
-- `suite_id`, `test_id`, and `platform`/`system` are lowercase identifiers (letters, digits,
-  underscores). The `test_id` in `suite.yaml` must match the folder name under `tests/`.
+- `suite_id` and `test_id` are lowercase identifiers. The `test_id` in `suite.yaml` must match
+  the folder name under `tests/`. One prerequisite file per suite (no platform/system layering).
 
-## A Suite: `suite.yaml`
+## A Suite: `suite.yaml` + `README.md`
 
-A Suite is a collection of related tests plus the requirements an Environment must meet to
-run it. Example `suites/pwhe_shaping/suite.yaml`:
+A Suite is a collection of related tests. There is no environment object and no
+compatibility matching: the user runs a suite and enters device addresses at run time in the
+Environment tab. Example `suites/pwhe_shaping/suite.yaml`:
 
 ```yaml
 id: pwhe_shaping
 name: PWHE Shaping
 description: Validate PWHE shaping behavior.
-
-# Requirements decide whether an Environment is even allowed to run this Suite.
-requirements:
-  min_devices: 2
-  traffic_generator: true
-  capabilities:
-    - qos
-    - shaping
-    - pwhe
-
-supported_platforms:
-  - platform_a
-  - platform_b
 
 # Ordered list of test ids. Each must be a folder under tests/.
 tests:
@@ -107,6 +93,21 @@ tests:
   - high_priority_queue
   - congestion_behavior
 ```
+
+Every suite also ships a `README.md` with two sections, shown in the Environment tab:
+
+```markdown
+# PWHE Shaping
+
+## Suite details
+What this suite validates and which devices the user must provide.
+
+## Connectivity
+How to cable the devices (a diagram/bullets).
+```
+
+The devices a suite needs are expressed by the prerequisite file (`device_role` fields), not
+by a requirements/compatibility block.
 
 ## A Test: `test.py` + `test.yaml`
 
