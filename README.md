@@ -396,7 +396,8 @@ sections:
 ```
 
 **Supported field types:** `text`, `textarea`, `number`, `integer`, `boolean`,
-`confirmation`, `select`, `multiselect`, `ip`, `interface`, `secret_reference`, `check`.
+`confirmation`, `select`, `multiselect`, `ip`, `host` (IP or hostname), `interface`,
+`secret_reference`, `check`.
 
 **Device binding:** add `device_role` to a field that holds a device address to open a
 Run-owned session to the host the user enters, addressable in tests via `ctx.device("<role>")`.

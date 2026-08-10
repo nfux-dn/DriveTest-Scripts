@@ -13,7 +13,7 @@ sections:
     title: Connectivity
     fields:
       - id: dut_management_ip
-        label: DUT Management IP
-        type: ip
+        label: DUT Management IP / Hostname
+        type: host           # accepts an IP address or a hostname
         required: true
         device_role: dut     # opens a Run-owned session to this host as role "dut"
