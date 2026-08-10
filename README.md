@@ -16,8 +16,8 @@ correctly when the platform executes them.
 
 - [How the platform runs your scripts](#how-the-platform-runs-your-scripts)
 - [Repository structure](#repository-structure)
-- [A Suite: `suite.yaml`](#a-suite-suiteyaml)
-- [A Test: `test.py` + `test.yaml`](#a-test-testpy--testyaml)
+- [A Suite: `prerequisites.yaml`](#a-suite-prerequisitesyaml--readmemd)
+- [A Test: `test.py` + `evaluation.md`](#a-test-testpy--evaluationmd)
 - [The execution contract](#the-execution-contract)
 - [Talking to devices (ExecutionContext)](#talking-to-devices-executioncontext)
 - [The result contract (`result.json`)](#the-result-contract-resultjson)
@@ -57,41 +57,51 @@ The platform expects this layout. The important path is
 DriveTest-Scripts/
 ├── suites/
 │   └── <suite_id>/
-│       ├── suite.yaml                 # id, name, description, ordered test list
+│       ├── prerequisites.yaml         # merged: suite definition + device form
 │       ├── README.md                  # suite purpose + connectivity (shown in Environment tab)
 │       └── tests/
 │           └── <test_id>/
 │               ├── test.py            # REQUIRED: the executable test
-│               ├── test.yaml          # optional: definition + AI evaluation instructions
+│               ├── evaluation.md      # optional: AI evaluation instructions
 │               └── README.md          # optional: notes for humans
 │
-├── prerequisites/
-│   └── <suite_id>/
-│       └── common.yaml                # the prerequisite form (device inputs)
-│
+├── skills/                            # your uploaded skills (SKILL.md); not used by the app
+│   └── <skill_id>/SKILL.md
 ├── framework/                         # optional shared helpers you vendor in (see notes)
 └── schemas/                           # optional JSON schemas / reference docs
 ```
 
-- `suite_id` and `test_id` are lowercase identifiers. The `test_id` in `suite.yaml` must match
-  the folder name under `tests/`. One prerequisite file per suite (no platform/system layering).
+- `suite_id` and `test_id` are lowercase identifiers. Each `test_id` in the `tests:` list
+  (inside `prerequisites.yaml`) must match the folder name under `tests/`.
 
-## A Suite: `suite.yaml` + `README.md`
+## A Suite: `prerequisites.yaml` + `README.md`
 
 A Suite is a collection of related tests. There is no environment object and no
 compatibility matching: the user runs a suite and enters device addresses at run time in the
-Environment tab. Example `suites/pwhe_shaping/suite.yaml`:
+Environment tab. A suite is defined by a single merged file
+`suites/<suite_id>/prerequisites.yaml` that holds both the suite definition and the device
+form:
 
 ```yaml
+# suite definition
 id: pwhe_shaping
 name: PWHE Shaping
 description: Validate PWHE shaping behavior.
-
-# Ordered list of test ids. Each must be a folder under tests/.
-tests:
+tests:                       # ordered test ids; each is a folder under tests/
   - max_bandwidth
   - high_priority_queue
-  - congestion_behavior
+
+# device / prerequisite form
+version: 1
+sections:
+  - id: connectivity
+    title: Connectivity
+    fields:
+      - id: dut_management_ip
+        label: DUT Management IP
+        type: ip
+        required: true
+        device_role: dut     # opens a Run-owned session to this host as role "dut"
 ```
 
 Every suite also ships a `README.md` with two sections, shown in the Environment tab:
@@ -106,23 +116,24 @@ What this suite validates and which devices the user must provide.
 How to cable the devices (a diagram/bullets).
 ```
 
-The devices a suite needs are expressed by the prerequisite file (`device_role` fields), not
-by a requirements/compatibility block.
+The devices a suite needs are expressed by the `device_role` fields in `prerequisites.yaml`,
+not by a requirements/compatibility block.
 
-## A Test: `test.py` + `test.yaml`
+## A Test: `test.py` + `evaluation.md`
 
 `test.py` is the only required file in a test folder. It runs, gathers evidence, optionally
 decides a verdict, and writes `result.json`.
 
-`test.yaml` is optional but recommended — it gives the AI reviewer context. Only these keys
-are used:
+`evaluation.md` is optional but recommended — its markdown is given to the AI reviewer as the
+expected behavior + evaluation instructions for the test:
 
-```yaml
-id: max_bandwidth
-name: Max bandwidth shaping
-description: Validate that measured bandwidth stays within the configured shaping range.
-expected_behavior: Measured rate should be at or below the configured rate within a small tolerance.
-evaluation_instructions: Treat measured rate exceeding configured by more than 5% as a failure.
+```markdown
+# Max bandwidth shaping
+
+Expected behavior: measured rate should be at or below the configured rate within a small
+tolerance.
+
+Evaluation instructions: treat measured rate exceeding configured by more than 5% as a failure.
 ```
 
 ## The execution contract
@@ -321,19 +332,13 @@ When execution is not `COMPLETED`, there is no product verdict and the result ca
 ## Prerequisites
 
 Prerequisites are the runtime inputs a user must supply before a Suite can run (IPs, ports,
-traffic generator, confirmations, and automatic checks). They are **declarative YAML** under
-`prerequisites/<suite_id>/`. The platform merges, in order (later overrides earlier):
+traffic generator, confirmations, and automatic checks). They are **declarative YAML** in the
+`version:` + `sections:` part of the suite's merged file
+`suites/<suite_id>/prerequisites.yaml` (one file per suite; no platform/system layering).
 
-```
-prerequisites/<suite_id>/common.yaml
-prerequisites/<suite_id>/<platform>/default.yaml
-prerequisites/<suite_id>/<platform>/<system_type>.yaml
-```
-
-Example `prerequisites/pwhe_shaping/common.yaml`:
+Example (the form part of `suites/pwhe_shaping/prerequisites.yaml`):
 
 ```yaml
-id: pwhe_shaping_common
 version: 1
 
 sections:
@@ -419,25 +424,31 @@ The values the user fills in are delivered to your `test.py` in the context file
 1. Create the folders:
 
    ```
-   suites/demo/suite.yaml
+   suites/demo/prerequisites.yaml
+   suites/demo/README.md
    suites/demo/tests/show_version/test.py
-   suites/demo/tests/show_version/test.yaml
-   prerequisites/demo/common.yaml
+   suites/demo/tests/show_version/evaluation.md
    ```
 
-2. `suites/demo/suite.yaml` (the Environment it runs on must provide a `dut` device):
+2. `suites/demo/prerequisites.yaml` (suite definition + the device form):
 
    ```yaml
    id: demo
    name: Demo Suite
    description: Minimal example suite.
-   requirements:
-     min_devices: 1
-     traffic_generator: false
-     capabilities: []
-   supported_platforms: [platform_a]
    tests:
      - show_version
+
+   version: 1
+   sections:
+     - id: connectivity
+       title: Connectivity
+       fields:
+         - id: dut_management_ip
+           label: DUT Management IP
+           type: ip
+           required: true
+           device_role: dut
    ```
 
 3. `suites/demo/tests/show_version/test.py` — talk to the device via ExecutionContext
@@ -464,30 +475,17 @@ The values the user fills in are delivered to your `test.py` in the context file
    })
    ```
 
-4. `suites/demo/tests/show_version/test.yaml`:
+4. `suites/demo/tests/show_version/evaluation.md`:
 
-   ```yaml
-   id: show_version
-   name: Device version
-   description: Collect the device version over the Run-owned connection.
-   expected_behavior: The device returns version output.
-   evaluation_instructions: Pass if version output was returned; fail if empty.
+   ```markdown
+   # Device version
+
+   Expected behavior: the device returns version output over the Run-owned connection.
+
+   Evaluation instructions: pass if version output was returned; fail if empty.
    ```
 
-5. `prerequisites/demo/common.yaml`:
-
-   ```yaml
-   id: demo_common
-   version: 1
-   sections:
-     - id: connectivity
-       title: Connectivity
-       fields:
-         - id: dut_management_ip
-           label: DUT Management IP
-           type: ip
-           required: true
-   ```
+5. `suites/demo/README.md`: add `## Suite details` and `## Connectivity` sections.
 
 Commit and push. In the DriveTest app, select this repo's branch/commit for a run of the
 Demo Suite.
@@ -509,8 +507,7 @@ cd suites/demo/tests/show_version
 
 cat > /tmp/context.json <<'JSON'
 { "run_id": "local", "suite_id": "demo", "test_id": "show_version",
-  "environment": {"id": "lab_23", "platform": "platform_a", "system_type": "pwhe", "software_version": "25.2"},
-  "values": { "dut_management_ip": "127.0.0.1" } }
+  "environment": {}, "values": { "dut_management_ip": "127.0.0.1" } }
 JSON
 
 DRIVETEST_CONTEXT_PATH=/tmp/context.json \
@@ -551,12 +548,12 @@ would classify that run as `SCRIPT_ERROR`.
 ## Checklist for adding a test
 
 - [ ] Folder `suites/<suite_id>/tests/<test_id>/` with `test.py`.
-- [ ] `<test_id>` added to the `tests:` list in `suites/<suite_id>/suite.yaml`.
+- [ ] `<test_id>` added to the `tests:` list in `suites/<suite_id>/prerequisites.yaml`.
 - [ ] `test.py` reads `DRIVETEST_CONTEXT_PATH` and writes valid JSON to `DRIVETEST_RESULT_PATH`.
 - [ ] Device access uses `ExecutionContext` by role — no direct SSH/sockets in the test.
 - [ ] `test_verdict` is `"PASSED"`, `"FAILED"`, or `null` (deliberately chosen).
 - [ ] `measurements`/`observations`/`evidence` populated for the AI reviewer.
-- [ ] `test.yaml` describes the test and gives evaluation instructions (recommended).
-- [ ] New prerequisite inputs (if any) added under `prerequisites/<suite_id>/`.
+- [ ] `suites/<suite_id>/tests/<test_id>/evaluation.md` gives expected behavior + instructions.
+- [ ] Device inputs added to the `sections:` in `suites/<suite_id>/prerequisites.yaml`.
 - [ ] Ran it locally with the env vars above and inspected `result.json`.
 - [ ] No secrets committed.

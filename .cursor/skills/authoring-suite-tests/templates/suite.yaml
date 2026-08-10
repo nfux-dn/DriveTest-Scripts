@@ -1,6 +1,0 @@
-id: my_suite
-name: My Suite
-description: What this suite validates.
-
-tests:
-  - my_test

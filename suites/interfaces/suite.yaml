@@ -1,6 +1,0 @@
-id: interfaces
-name: Interfaces
-description: Interface configuration validation tests.
-
-tests:
-  - interface-description-change

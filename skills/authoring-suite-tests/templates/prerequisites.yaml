@@ -1,0 +1,19 @@
+# Merged suite file: suite definition + device/prerequisite form.
+
+id: my_suite
+name: My Suite
+description: What this suite validates.
+
+tests:
+  - my_test
+
+version: 1
+sections:
+  - id: connectivity
+    title: Connectivity
+    fields:
+      - id: dut_management_ip
+        label: DUT Management IP
+        type: ip
+        required: true
+        device_role: dut     # opens a Run-owned session to this host as role "dut"

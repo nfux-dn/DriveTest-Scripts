@@ -1,6 +1,6 @@
 ---
 name: authoring-suite-tests
-description: Author DriveTest test packages that run under a suite - suite.yaml, prerequisites (including device_role bindings), tests/<id>/test.py using the ExecutionContext SDK, and test.yaml. Use when writing or adding a DriveTest test, creating a suite, wiring prerequisites, or when the user mentions DriveTest tests, test packages, suites, or the interfaces/DNOS tests in this repo.
+description: Author DriveTest test packages that run under a suite - the merged suites/<id>/prerequisites.yaml (suite definition + device form with device_role bindings), suites/<id>/README.md, and tests/<id>/test.py (using the ExecutionContext SDK) with evaluation.md. Use when writing or adding a DriveTest test, creating a suite, wiring prerequisites, or when the user mentions DriveTest tests, test packages, suites, or the interfaces/DNOS tests in this repo.
 disable-model-invocation: true
 ---
 
@@ -18,17 +18,18 @@ quick authoring guide.
 For a suite `S` and test `T`, create:
 
 ```
-suites/S/suite.yaml                         # id, name, description, ordered tests list
+suites/S/prerequisites.yaml                 # merged: suite definition (id/name/description/tests)
+                                            #         + device form (version + sections/fields)
 suites/S/README.md                          # suite purpose + connectivity scheme
 suites/S/tests/T/test.py                    # the test (required)
-suites/S/tests/T/test.yaml                  # AI review metadata (recommended)
-prerequisites/S/common.yaml                 # device inputs the user fills at run time
+suites/S/tests/T/evaluation.md              # AI evaluation instructions (recommended)
+suites/S/tests/T/README.md                  # optional human notes
 ```
 
-Copy the skeletons in `templates/` and adapt. Keep `T` in `suite.yaml`'s `tests:`
-list identical to the folder name. There is no environment object and no
-platform/system layering: the user runs a suite and simply enters device
-addresses in the Environment tab.
+Copy the skeletons in `templates/` and adapt. Keep `T` in the `tests:` list
+(inside `prerequisites.yaml`) identical to the folder name. There is no
+environment object and no platform/system layering: the user runs a suite and
+simply enters device addresses in the Environment tab.
 
 The Environment tab shows two things: your suite `README.md` (a `## Suite details`
 section and a `## Connectivity` section) and the dynamic prerequisite form.
@@ -101,22 +102,24 @@ Task Progress:
 ## Authoring workflow
 
 1. Pick suite id `S` and test id `T`.
-2. `suites/S/suite.yaml`: set `id`, `name`, `description`, and add `T` to `tests:`.
+2. `suites/S/prerequisites.yaml`: set `id`, `name`, `description`, add `T` to
+   `tests:`, and define the device form under `version:` + `sections:` (mark
+   device hosts with `device_role`).
 3. `suites/S/README.md`: write `## Suite details` and `## Connectivity` sections.
-4. `prerequisites/S/common.yaml`: add inputs; mark device hosts with `device_role`.
-5. `suites/S/tests/T/test.py`: use ExecutionContext; write result.json.
-6. `suites/S/tests/T/test.yaml`: name/description/expected_behavior/evaluation_instructions.
-7. Validate locally where possible (see repo README "Test it locally"), then run
+4. `suites/S/tests/T/test.py`: use ExecutionContext; write result.json.
+5. `suites/S/tests/T/evaluation.md`: expected behavior + AI evaluation instructions.
+6. Validate locally where possible (see repo README "Test it locally"), then run
    it via the platform.
 
 ## Checklist
 
-- [ ] `T` folder has `test.py`; `T` is listed in `suites/S/suite.yaml`.
+- [ ] `T` folder has `test.py`; `T` is listed in `suites/S/prerequisites.yaml` `tests:`.
+- [ ] `suites/S/prerequisites.yaml` defines the device form (sections/fields, device_role).
 - [ ] `suites/S/README.md` has `## Suite details` and `## Connectivity`.
 - [ ] Device access uses `ctx.device(role)` (role declared via `device_role`) - no direct SSH.
 - [ ] `test.py` writes valid `result.json` with a deliberate `test_verdict`.
 - [ ] `measurements`/`observations`/`evidence` populated for the AI reviewer.
-- [ ] `test.yaml` gives the AI clear expected behavior + evaluation instructions.
+- [ ] `suites/S/tests/T/evaluation.md` gives the AI clear expected behavior + instructions.
 - [ ] No secrets committed.
 
 ## Worked example
