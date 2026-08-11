@@ -6,6 +6,7 @@ description: Interface configuration validation tests.
 
 tests:
   - interface-description-change
+  - interfaces-admin-state-disabled
 
 version: 1
 sections:
