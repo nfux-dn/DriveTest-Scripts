@@ -7,11 +7,19 @@ Flow (spec section 51 - device access via ExecutionContext, never direct SSH):
 4. show interfaces description and verify each target is now admin 'disabled'
    AND operationally 'down'
 5. rollback 1 + commit
-6. show interfaces description and verify each target returned to its baseline
-   admin + operational state
+6. poll `show interfaces description` once per second (up to 5 minutes) until every
+   target returned to its baseline admin + operational state, since bringing an
+   interface back up can take time; report how long it took
 """
 
+import time
+
 from drivetest import ExecutionContext
+
+# Interfaces can take a while to transition back to 'up' after re-enabling.
+# Poll once per second up to this many seconds before giving up.
+REVERT_TIMEOUT_S = 300
+REVERT_POLL_INTERVAL_S = 1.0
 
 
 def parse_interfaces(text: str) -> dict[str, dict[str, str]]:
@@ -107,24 +115,36 @@ def main() -> None:
     dut.rollback(1)
     dut.commit()
 
-    reverted = parse_interfaces(dut.run("show interfaces description"))
-    revert_mismatches = {
-        name: {
-            "expected": {
-                "admin": baseline[name]["admin"],
-                "oper": baseline[name]["oper"],
-            },
-            "actual": {
-                "admin": reverted.get(name, {}).get("admin"),
-                "oper": reverted.get(name, {}).get("oper"),
-            },
+    def compute_revert_mismatches(reverted: dict[str, dict[str, str]]) -> dict:
+        return {
+            name: {
+                "expected": {
+                    "admin": baseline[name]["admin"],
+                    "oper": baseline[name]["oper"],
+                },
+                "actual": {
+                    "admin": reverted.get(name, {}).get("admin"),
+                    "oper": reverted.get(name, {}).get("oper"),
+                },
+            }
+            for name in targets
+            if reverted.get(name, {}).get("admin", "").lower()
+            != baseline[name]["admin"].lower()
+            or reverted.get(name, {}).get("oper", "").lower()
+            != baseline[name]["oper"].lower()
         }
-        for name in targets
-        if reverted.get(name, {}).get("admin", "").lower()
-        != baseline[name]["admin"].lower()
-        or reverted.get(name, {}).get("oper", "").lower()
-        != baseline[name]["oper"].lower()
-    }
+
+    # Bringing an interface back up after re-enabling is not instantaneous, so
+    # poll once per second until every target matches its baseline again or the
+    # timeout expires.
+    revert_start = time.monotonic()
+    while True:
+        reverted = parse_interfaces(dut.run("show interfaces description"))
+        revert_mismatches = compute_revert_mismatches(reverted)
+        revert_wait_s = time.monotonic() - revert_start
+        if not revert_mismatches or revert_wait_s >= REVERT_TIMEOUT_S:
+            break
+        time.sleep(REVERT_POLL_INTERVAL_S)
 
     disabled_ok = not disable_mismatches
     reverted_ok = not revert_mismatches
@@ -141,15 +161,18 @@ def main() -> None:
                 "reverted_ok": reverted_ok,
                 "disable_mismatch_count": len(disable_mismatches),
                 "revert_mismatch_count": len(revert_mismatches),
+                "revert_wait_seconds": round(revert_wait_s, 1),
+                "revert_timeout_seconds": REVERT_TIMEOUT_S,
             },
             "observations": [
                 f"Disabled {len(targets)} previously non-disabled interface(s).",
                 "All targets transitioned to admin disabled and operationally down."
                 if disabled_ok
                 else f"Disable mismatches: {dict(list(disable_mismatches.items())[:5])}",
-                "All targets restored to baseline admin/oper state after rollback 1."
+                f"All targets restored to baseline admin/oper state {round(revert_wait_s, 1)}s after rollback 1 commit."
                 if reverted_ok
-                else f"Revert mismatches: {dict(list(revert_mismatches.items())[:5])}",
+                else f"Targets did NOT restore to baseline within {REVERT_TIMEOUT_S}s "
+                f"(waited {round(revert_wait_s, 1)}s). Revert mismatches: {dict(list(revert_mismatches.items())[:5])}",
             ],
             "evidence": [
                 {"source": "sample_targets", "details": targets[:5]},
