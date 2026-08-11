@@ -7,7 +7,7 @@ Flow (spec section 51 - device access via ExecutionContext, never direct SSH):
 4. show interfaces description and verify each target is now admin 'disabled'
    AND operationally 'down'
 5. rollback 1 + commit
-6. poll `show interfaces description` once per second (up to 10 minutes) until every
+6. poll `show interfaces description` once per second (up to 3 minutes) until every
    target returned to its baseline admin + operational state, since bringing an
    interface back up can take time; report how long it took
 """
@@ -18,7 +18,7 @@ from drivetest import ExecutionContext
 
 # Interfaces can take a while to transition back to 'up' after re-enabling.
 # Poll once per second up to this many seconds before giving up.
-REVERT_TIMEOUT_S = 600
+REVERT_TIMEOUT_S = 180
 REVERT_POLL_INTERVAL_S = 1.0
 
 
